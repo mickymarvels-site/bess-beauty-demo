@@ -25,6 +25,7 @@ Only connect this demo repository and its own Netlify site. No custom domain is 
 ## What works
 
 - Responsive customer website using the supplied logo and class information.
+- Buy buttons, a persistent browser cart, quantity updates, removal and subtotal. Unpriced items cannot be added. Cart items resolve against the currently published catalog; hidden/deleted items are removed and prices refresh on page load. Checkout is a preview only; no orders or payments are created.
 - Class/video add, edit, hide and delete; editable prices and schedules.
 - Promotion banner and contact email.
 - Gallery uploads (JPEG, PNG, WebP, max 1 MB each; max 4 MB total published data).

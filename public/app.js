@@ -5,12 +5,38 @@ const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const safeUrl=(url,image=false)=>{try{const u=new URL(url);return u.protocol==='https:'?u.href:''}catch{return image&&/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(url)?url:''}};
 let live=clone(initial), draft,remote=false;
 const price=x=>x===''||x==null?'Price to be confirmed':new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(x);
+
+let cart=[];
+try{const stored=JSON.parse(localStorage.getItem('bess-cart-v1'));if(Array.isArray(stored))cart=stored.filter(x=>x&&['classes','videos'].includes(x.kind)&&typeof x.title==='string'&&Number.isInteger(x.quantity)&&x.quantity>0&&x.quantity<=10).slice(0,100)}catch{}
+function purchasable(x){return x&&x.visible&&typeof x.price==='number'&&Number.isFinite(x.price)&&x.price>=0}
+function purchaseActions(x,kind,label){return `<div class="purchase-actions"><a class="text-link" href="#contact">${label}</a><button class="button buy-button" data-buy="${kind}" data-title="${esc(x.title)}" ${purchasable(x)?'':'disabled'} aria-label="${esc(purchasable(x)?'Add '+x.title+' to cart':'Price pending for '+x.title)}">${purchasable(x)?'Buy ↗':'Price pending'}</button></div>`}
+function cartProduct(row){return live[row.kind]?.find(x=>x.title===row.title&&purchasable(x))}
+function saveCart(){try{localStorage.setItem('bess-cart-v1',JSON.stringify(cart))}catch{$('#cart-status').textContent='Your cart works for this visit, but could not be saved in this browser.'}}
+function renderCart(){
+ // Resolve against published content so removed/hidden items cannot remain purchasable.
+ cart=cart.filter(row=>cartProduct(row));saveCart();
+ $('#cart-count').textContent=cart.reduce((n,x)=>n+x.quantity,0);
+ $('#cart-summary').hidden=!cart.length;
+ $('#cart-items').innerHTML=cart.length?cart.map((row,i)=>{const x=cartProduct(row);return `<article class="cart-row"><div><p class="eyebrow">${row.kind==='classes'?'LIVE CLASS':'VIDEO LESSON'}</p><h3>${esc(x.title)}</h3><p>${price(x.price)} each</p></div><div class="cart-row-controls"><label>Quantity for ${esc(x.title)}<select data-cart-quantity="${i}" aria-label="Quantity for ${esc(x.title)}">${Array.from({length:10},(_,n)=>`<option value="${n+1}" ${row.quantity===n+1?'selected':''}>${n+1}</option>`).join('')}</select></label><strong>${price(x.price*row.quantity)}</strong><button data-cart-remove="${i}" aria-label="Remove ${esc(x.title)} from cart">Remove</button></div></article>`}).join(''):'<div class="cart-empty"><h3>A little room for possibility.</h3><p>Your cart is empty. Choose a class or video lesson to get started.</p><a class="button" href="#classes">Explore classes ↗</a></div>';
+ const cents=cart.reduce((n,row)=>n+Math.round(cartProduct(row).price*100)*row.quantity,0);
+ $('#cart-total').textContent=new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(cents/100);
+}
+$('#customer').addEventListener('click',e=>{
+ const buy=e.target.closest('[data-buy]');
+ if(buy){const row={kind:buy.dataset.buy,title:buy.dataset.title,quantity:1};if(!cartProduct(row))return;const existing=cart.find(x=>x.kind===row.kind&&x.title===row.title);if(existing&&existing.quantity>=10){$('#cart-status').textContent='Maximum 10 of each item in this demo.'}else{if(existing)existing.quantity++;else cart.push(row);$('#cart-status').textContent=row.title+' added to your cart.'}renderCart();location.hash='cart';return}
+ const remove=e.target.closest('[data-cart-remove]');if(remove){const index=Number(remove.dataset.cartRemove);const title=cart[index]?.title;cart.splice(index,1);renderCart();$('#cart-status').textContent=title+' removed from your cart.';$('#clear-cart').focus()}
+});
+$('#cart-items').addEventListener('change',e=>{if(!e.target.matches('[data-cart-quantity]'))return;const index=Number(e.target.dataset.cartQuantity),quantity=Number(e.target.value);if(cart[index]&&Number.isInteger(quantity)&&quantity>=1&&quantity<=10){cart[index].quantity=quantity;renderCart();const replacement=$(`[data-cart-quantity="${index}"]`);replacement?.focus();$('#cart-status').textContent='Cart total updated.'}});
+$('#clear-cart').onclick=()=>{cart=[];renderCart();$('#cart-status').textContent='Your cart has been cleared.'};
+$('#checkout-demo').onclick=()=>{$('#cart-status').textContent='This is a checkout preview. No order has been placed and no payment has been taken. Contact Bess to discuss your selection.'};
+
 function render(){
  $('#promotion').hidden=!live.promo;$('#promotion').textContent=live.promo;
- $('#class-list').innerHTML=live.classes.filter(x=>x.visible).map((x,i)=>`<article class="card"><span class="number">CLASS / 0${i+1}</span><h3>${esc(x.title)}</h3><p>${esc(x.description)}</p><p>${esc(x.duration)}</p><div class="price">${price(x.price)}</div><a class="text-link" href="#contact">Inquire about this class ↗</a></article>`).join('');
- $('#video-list').innerHTML=live.videos.filter(x=>x.visible).map(x=>`<article class="video-card"><div class="video-icon" aria-hidden="true">▷</div><p class="eyebrow">PRE-RECORDED VIDEO LESSON</p><h3>${esc(x.title)}</h3><p>${esc(x.description)}</p><div class="price">${price(x.price)}</div>${safeUrl(x.url)?`<a class="text-link" href="${esc(safeUrl(x.url))}" target="_blank" rel="noopener noreferrer">Watch public sample ↗</a>`:'<p class="fine">Preview coming soon · Inquire for details</p>'}</article>`).join('');
+ $('#class-list').innerHTML=live.classes.filter(x=>x.visible).map((x,i)=>`<article class="card"><span class="number">CLASS / 0${i+1}</span><h3>${esc(x.title)}</h3><p>${esc(x.description)}</p><p>${esc(x.duration)}</p><div class="price">${price(x.price)}</div>${purchaseActions(x,'classes','Inquire about this class ↗')}</article>`).join('');
+ $('#video-list').innerHTML=live.videos.filter(x=>x.visible).map(x=>`<article class="video-card"><div class="video-icon" aria-hidden="true">▷</div><p class="eyebrow">PRE-RECORDED VIDEO LESSON</p><h3>${esc(x.title)}</h3><p>${esc(x.description)}</p><div class="price">${price(x.price)}</div>${safeUrl(x.url)?`<a class="text-link" href="${esc(safeUrl(x.url))}" target="_blank" rel="noopener noreferrer">Watch public sample ↗</a>`:'<p class="fine">Preview coming soon</p>'}${purchaseActions(x,'videos','Inquire about this lesson ↗')}</article>`).join('');
  $('#gallery-list').innerHTML=live.photos.length?live.photos.map(x=>`<figure><img src="${esc(safeUrl(x.url,true))}" alt="${esc(x.caption)}" loading="lazy"><figcaption>${esc(x.caption)}</figcaption></figure>`).join(''):[['The knotless edit','Room for the salon’s own knotless braid photos.'],['Clean lines. Beautiful detail.','Room for cornrows and stitch braid photos.'],['Your next signature look','Upload original salon photos in the admin studio.']].map(x=>`<div class="placeholder"><b>${x[0]}</b><p>${x[1]}</p></div>`).join('');
  const email=live.email&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(live.email)?live.email:'';
+ renderCart();
  $('#contact-link').hidden=!email;$('#contact-link').href='mailto:'+email;$('#contact-note').textContent=email?'Tell us about the style or class you’re interested in. Contact Bess to discuss availability.':'Appointment and class inquiries will open when salon contact details are added.';
 }
 function saveDraft(){try{localStorage.setItem('bess-draft-v1',JSON.stringify(draft));$('#status').textContent='Draft saved · not published'}catch{$('#status').textContent='Browser storage is full. Remove a photo or export your draft.'}}
