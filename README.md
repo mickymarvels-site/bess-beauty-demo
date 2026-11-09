@@ -27,7 +27,7 @@ Only connect this demo repository and its own Netlify site. No custom domain is 
 - Responsive customer website using the supplied logo and class information.
 - Buy buttons, a persistent browser cart, quantity updates, removal and subtotal. Unpriced items cannot be added. Cart items resolve against the currently published catalog; hidden/deleted items are removed and prices refresh on page load. Checkout is a preview only; no orders or payments are created.
 - Class/video add, edit, hide and delete; editable prices and schedules.
-- Admin MP4/WebM video uploads, up to 15 MB per preview. Chunked into 3 MB requests to Netlify Blobs, validated and attached to a draft. Published visible uploads play inline with seeking support. The media route serves only currently published, visible uploads. Hiding/removing one and publishing revokes that route on subsequent requests.
+- Admin MPEG-4 (.mp4/.m4v) and WebM video uploads, up to 15 MB per preview. Chunked into 3 MB requests to Netlify Blobs, validated and attached to a draft. Published visible uploads play inline with seeking support. The media route serves only currently published, visible uploads. Hiding/removing one and publishing revokes that route on subsequent requests.
 - Promotion banner and contact email.
 - Gallery uploads (JPEG, PNG, WebP, max 1 MB each; max 4 MB total published data).
 - Browser-local drafts, explicit publishing and JSON export. A sticky footer publish bar shows pending changes and publishes all draft edits together. Both publish buttons wait for photo/video uploads and show progress/success/errors. Edits made while publishing remain in the draft for the next publish.
@@ -35,7 +35,7 @@ Only connect this demo repository and its own Netlify site. No custom domain is 
 
 ## Demo boundaries
 
-- No payments, appointment scheduling, customer accounts, private video hosting or purchase access. Video links and uploads are public samples, never paid lesson URLs. Larger/longer video hosting needs a separate video service; direct HTTPS MP4/WebM URLs also play inline. Unattached/replaced upload blobs are retained; automatic storage cleanup is not implemented.
+- No payments, appointment scheduling, customer accounts, private video hosting or purchase access. Video links and uploads are public samples, never paid lesson URLs. Larger/longer video hosting needs a separate video service; direct HTTPS MP4/M4V/WebM URLs also play inline. Unattached/replaced upload blobs are retained; automatic storage cleanup is not implemented.
 - Publicly published photos and sample links are visible to anyone with the site URL. The demo is not a private site gate.
 - Admin studio has no user management, password reset, login sessions, rate limiting or edit conflict detection. Before a business launch, add managed authentication with admin roles and protect paid lessons with server-side purchase checks.
 - Gallery contains labeled placeholders until real photos are uploaded. No fabricated reviews, locations or service prices.

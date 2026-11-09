@@ -30,8 +30,15 @@ $('#cart-items').addEventListener('change',e=>{if(!e.target.matches('[data-cart-
 $('#clear-cart').onclick=()=>{cart=[];renderCart();$('#cart-status').textContent='Your cart has been cleared.'};
 $('#checkout-demo').onclick=()=>{$('#cart-status').textContent='This is a checkout preview. No order has been placed and no payment has been taken. Contact Bess to discuss your selection.'};
 
+function videoUploadType(file){
+ const type=(file.type||'').toLowerCase();
+ if(['video/mp4','video/mpeg4','video/x-m4v','video/m4v','application/mp4'].includes(type))return 'video/mp4';
+ if(type==='video/webm')return 'video/webm';
+ if(!type||type==='application/octet-stream'){if(/\.(mp4|m4v)$/i.test(file.name))return 'video/mp4';if(/\.webm$/i.test(file.name))return 'video/webm'}
+ return '';
+}
 function mediaUrl(x){return /^[a-f0-9-]{36}$/.test(x.mediaId||'')?'/.netlify/functions/media?id='+x.mediaId:''}
-function videoPlayer(x){const src=mediaUrl(x)||(safeUrl(x.url)&&/\.(mp4|webm)(\?|$)/i.test(x.url)?safeUrl(x.url):'');return src?`<video class="lesson-player" controls playsinline preload="metadata" aria-label="${esc(x.title)} public preview" src="${esc(src)}"></video>`:'<div class="video-icon" aria-hidden="true">▷</div>'}
+function videoPlayer(x){const src=mediaUrl(x)||(safeUrl(x.url)&&/\.(mp4|m4v|webm)(\?|$)/i.test(x.url)?safeUrl(x.url):'');return src?`<video class="lesson-player" controls playsinline preload="metadata" aria-label="${esc(x.title)} public preview" src="${esc(src)}"></video>`:'<div class="video-icon" aria-hidden="true">▷</div>'}
 function render(){
  $('#promotion').hidden=!live.promo;$('#promotion').textContent=live.promo;
  $('#class-list').innerHTML=live.classes.filter(x=>x.visible).map((x,i)=>`<article class="card"><span class="number">CLASS / 0${i+1}</span><h3>${esc(x.title)}</h3><p>${esc(x.description)}</p><p>${esc(x.duration)}</p><div class="price">${price(x.price)}</div>${purchaseActions(x,'classes','Inquire about this class ↗')}</article>`).join('');
@@ -53,7 +60,7 @@ function saveDraft(){updatePublishControls();try{localStorage.setItem('bess-draf
 function editors(){
  $('#promo').value=draft.promo;$('#email').value=draft.email;
  for(const [key,target] of [['classes','#class-editor'],['videos','#video-editor']]){
- $(target).innerHTML=draft[key].map((x,i)=>`<div class="edit-item" data-kind="${key}" data-index="${i}"><div class="edit-grid"><label>Title<input data-field="title" value="${esc(x.title)}" maxlength="150"></label><label>Price in USD (blank = unconfirmed)<input data-field="price" type="number" min="0" step="1" value="${esc(x.price)}"></label></div><label>Description<textarea data-field="description" maxlength="3000">${esc(x.description)}</textarea></label>${key==='classes'?`<label>Schedule<input data-field="duration" value="${esc(x.duration)}"></label>`:`<label>Upload video preview (MP4 / WebM, up to 15 MB)<input data-video-upload="${i}" type="file" accept="video/mp4,video/webm" ${uploadInProgress?'disabled':''}></label>${x.mediaId?`<p class="fine">Attached: ${esc(x.filename||'Uploaded video')}. Plays on the customer page after publishing.</p><button data-clear-video="${i}">Remove uploaded video</button>`:''}<label>Public sample video URL (HTTPS)<input data-field="url" type="url" value="${esc(x.url)}"></label>`}<label class="check"><input data-field="visible" type="checkbox" ${x.visible?'checked':''}>Show to customers after publishing</label><button data-remove="${key}" data-index="${i}">Remove ${key==='classes'?'class':'video'}</button></div>`).join('');
+ $(target).innerHTML=draft[key].map((x,i)=>`<div class="edit-item" data-kind="${key}" data-index="${i}"><div class="edit-grid"><label>Title<input data-field="title" value="${esc(x.title)}" maxlength="150"></label><label>Price in USD (blank = unconfirmed)<input data-field="price" type="number" min="0" step="1" value="${esc(x.price)}"></label></div><label>Description<textarea data-field="description" maxlength="3000">${esc(x.description)}</textarea></label>${key==='classes'?`<label>Schedule<input data-field="duration" value="${esc(x.duration)}"></label>`:`<label>Upload video preview (MPEG-4 (.mp4 / .m4v) or WebM, up to 15 MB)<input data-video-upload="${i}" type="file" accept=".mp4,.m4v,.webm,video/mp4,video/x-m4v,video/m4v,video/mpeg4,application/mp4,video/webm" ${uploadInProgress?'disabled':''}></label>${x.mediaId?`<p class="fine">Attached: ${esc(x.filename||'Uploaded video')}. Plays on the customer page after publishing.</p><button data-clear-video="${i}">Remove uploaded video</button>`:''}<label>Public sample video URL (HTTPS)<input data-field="url" type="url" value="${esc(x.url)}"></label>`}<label class="check"><input data-field="visible" type="checkbox" ${x.visible?'checked':''}>Show to customers after publishing</label><button data-remove="${key}" data-index="${i}">Remove ${key==='classes'?'class':'video'}</button></div>`).join('');
  }
  $('#photo-editor').innerHTML=draft.photos.map((x,i)=>`<div class="edit-item" data-kind="photos" data-index="${i}"><img src="${esc(safeUrl(x.url,true))}" alt="Photo preview"><label>Photo description<input data-field="caption" value="${esc(x.caption)}" maxlength="300"></label><button data-remove="photos" data-index="${i}">Remove photo</button></div>`).join('');
 }
@@ -68,13 +75,14 @@ $('#video-editor').addEventListener('change',async e=>{
  try{
   if(uploadInProgress)throw Error('Wait for the current upload to finish.');
   if(!remote)throw Error('Video uploads are available on the Netlify demo.');
-  if(!['video/mp4','video/webm'].includes(file.type)||!file.size||file.size>15*1024*1024)throw Error('Choose an MP4 or WebM up to 15 MB. For longer videos, use a hosted sample URL.');
+  const uploadType=videoUploadType(file);
+  if(!uploadType||!file.size||file.size>15*1024*1024)throw Error('Choose an MPEG-4 movie (.mp4 or .m4v) or WebM up to 15 MB. For longer videos, use a hosted sample URL.');
   const password=$('#password').value;if(!password)throw Error('Enter your admin password above before uploading.');
   uploadInProgress=true;updatePublishControls();input.disabled=true;
   const headers={'X-Admin-Password':password};
   async function send(url,options){const r=await fetch(url,options);const body=await r.json().catch(()=>({error:'Upload failed. Please retry.'}));if(!r.ok)throw Error(body.error||'Upload failed.');return body}
   $('#status').textContent='Preparing upload…';
-  const created=await send('/.netlify/functions/media',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({size:file.size,type:file.type})});
+  const created=await send('/.netlify/functions/media',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({size:file.size,type:uploadType})});
   for(let offset=0,part=0;offset<file.size;offset+=created.chunkSize,part++){
    await send('/.netlify/functions/media?id='+created.id+'&part='+part,{method:'PUT',headers:{...headers,'Content-Type':'application/octet-stream'},body:file.slice(offset,offset+created.chunkSize)});
    $('#status').textContent='Uploading video · '+Math.min(100,Math.round((offset+created.chunkSize)/file.size*100))+'%';
