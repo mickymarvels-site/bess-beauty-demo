@@ -10,7 +10,7 @@ function validate(d){
   for(const x of d[key]){
    if(!validText(x.title,150)||!x.title.trim()||!validText(x.description,3000)||typeof x.visible!=='boolean'||!(x.price===''||(typeof x.price==='number'&&Number.isFinite(x.price)&&x.price>=0)))return false;
    if(key==='classes'&&!validText(x.duration,300))return false;
-   if(key==='videos'){if(!validText(x.url,2000))return false;if(x.url){try{if(new URL(x.url).protocol!=='https:')return false}catch{return false}}}
+   if(key==='videos'){if(x.mediaId!==undefined&&x.mediaId!==''&&!/^[a-f0-9-]{36}$/.test(x.mediaId))return false;if(x.filename!==undefined&&!validText(x.filename,300))return false;if(!validText(x.url,2000))return false;if(x.url){try{if(new URL(x.url).protocol!=='https:')return false}catch{return false}}}
   }
  }
  return Array.isArray(d.photos)&&d.photos.length<=20&&d.photos.every(x=>validText(x.caption,300)&&validText(x.url,1500000)&&/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(x.url));
@@ -29,6 +29,8 @@ export default async request=>{
   if(Buffer.byteLength(raw)>4000000)return json({error:'Content is too large. Remove or resize gallery photos; limit 4 MB total.'},413);
   let content;try{content=JSON.parse(raw)}catch{return json({error:'Invalid JSON.'},400)}
   if(!validate(content))return json({error:'Check content fields, prices, photo sizes, and HTTPS video URLs.'},400);
+  const media=getStore({name:'bess-beauty-videos',consistency:'strong'});
+  for(const video of content.videos){if(video.mediaId){const manifest=await media.get(`${video.mediaId}/manifest`,{type:'json'});if(!manifest?.ready)return json({error:'A video upload is incomplete. Upload it again or remove it before publishing.'},400)}}
   await store.setJSON('published',content);
   return json({ok:true});
  }catch{return json({error:'Content storage is unavailable. Try again later.'},503)}
