@@ -4,6 +4,7 @@ const clone=x=>JSON.parse(JSON.stringify(x));
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const safeUrl=(url,image=false)=>{try{const u=new URL(url);return u.protocol==='https:'?u.href:''}catch{return image&&/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(url)?url:''}};
 let live=clone(initial), draft,remote=false,uploadInProgress=false,publishing=false,publishBlocked=true,photoReads=0;
+const pendingVideos=new WeakMap(),videoMessages=new WeakMap();
 const price=x=>x===''||x==null?'Price to be confirmed':new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(x);
 
 let cart=[];
@@ -49,18 +50,19 @@ function render(){
  $('#contact-link').hidden=!email;$('#contact-link').href='mailto:'+email;$('#contact-note').textContent=email?'Tell us about the style or class you’re interested in. Contact Bess to discuss availability.':'Appointment and class inquiries will open when salon contact details are added.';
 }
 function updatePublishControls(){
+ const waiting=draft?.videos.some(x=>pendingVideos.has(x));
  const busy=uploadInProgress||photoReads>0||publishing;
  const changed=draft&&JSON.stringify(draft)!==JSON.stringify(live);
- const label=publishing?'Publishing…':uploadInProgress||photoReads>0?'Waiting for uploads…':'Publish all changes ↗';
- for(const selector of ['#publish','#publish-bottom']){const button=$(selector);button.disabled=publishBlocked||busy;button.textContent=label;button.setAttribute('aria-busy',String(busy))}
+ const label=publishing?'Publishing…':uploadInProgress||photoReads>0?'Waiting for uploads…':waiting?'Upload selected videos first':'Publish all changes ↗';
+ for(const selector of ['#publish','#publish-bottom']){const button=$(selector);button.disabled=publishBlocked||busy||waiting;button.textContent=label;button.setAttribute('aria-busy',String(busy))}
  $('#discard').disabled=busy;
- $('#publish-state').textContent=publishBlocked?'Publishing unavailable':publishing?'Publishing your updates…':uploadInProgress||photoReads>0?'Upload in progress':changed?'Unpublished changes':'Everything is published';
+ $('#publish-state').textContent=publishBlocked?'Publishing unavailable':publishing?'Publishing your updates…':uploadInProgress||photoReads>0?'Upload in progress':waiting?'Video selected · upload before publishing':changed?'Unpublished changes':'Everything is published';
 }
 function saveDraft(){updatePublishControls();try{localStorage.setItem('bess-draft-v1',JSON.stringify(draft));$('#status').textContent='Draft saved · not published'}catch{$('#status').textContent='Browser storage is full. Remove a photo or export your draft.'}}
 function editors(){
  $('#promo').value=draft.promo;$('#email').value=draft.email;
  for(const [key,target] of [['classes','#class-editor'],['videos','#video-editor']]){
- $(target).innerHTML=draft[key].map((x,i)=>`<div class="edit-item" data-kind="${key}" data-index="${i}"><div class="edit-grid"><label>Title<input data-field="title" value="${esc(x.title)}" maxlength="150"></label><label>Price in USD (blank = unconfirmed)<input data-field="price" type="number" min="0" step="1" value="${esc(x.price)}"></label></div><label>Description<textarea data-field="description" maxlength="3000">${esc(x.description)}</textarea></label>${key==='classes'?`<label>Schedule<input data-field="duration" value="${esc(x.duration)}"></label>`:`<label>Upload video preview (MPEG-4 (.mp4 / .m4v) or WebM, up to 15 MB)<input data-video-upload="${i}" type="file" accept=".mp4,.m4v,.webm,video/mp4,video/x-m4v,video/m4v,video/mpeg4,application/mp4,video/webm" ${uploadInProgress?'disabled':''}></label>${x.mediaId?`<p class="fine">Attached: ${esc(x.filename||'Uploaded video')}. Plays on the customer page after publishing.</p><button data-clear-video="${i}">Remove uploaded video</button>`:''}<label>Public sample video URL (HTTPS)<input data-field="url" type="url" value="${esc(x.url)}"></label>`}<label class="check"><input data-field="visible" type="checkbox" ${x.visible?'checked':''}>Show to customers after publishing</label><button data-remove="${key}" data-index="${i}">Remove ${key==='classes'?'class':'video'}</button></div>`).join('');
+ $(target).innerHTML=draft[key].map((x,i)=>`<div class="edit-item" data-kind="${key}" data-index="${i}"><div class="edit-grid"><label>Title<input data-field="title" value="${esc(x.title)}" maxlength="150"></label><label>Price in USD (blank = unconfirmed)<input data-field="price" type="number" min="0" step="1" value="${esc(x.price)}"></label></div><label>Description<textarea data-field="description" maxlength="3000">${esc(x.description)}</textarea></label>${key==='classes'?`<label>Schedule<input data-field="duration" value="${esc(x.duration)}"></label>`:`<div class="video-upload-panel"><p class="fine">MPEG-4 (.mp4 / .m4v) or WebM · up to 15 MB</p><label class="choose-video">Choose video<input data-video-upload="${i}" type="file" accept=".mp4,.m4v,.webm,video/mp4,video/x-m4v,video/m4v,video/mpeg4,application/mp4,video/webm" ${uploadInProgress?'disabled':''}></label><p class="selected-video">${pendingVideos.has(x)?'Selected: '+esc(pendingVideos.get(x).name):x.mediaId?'Uploaded: '+esc(x.filename||'Video'):'No video selected yet'}</p>${pendingVideos.has(x)?`<button class="button" data-start-upload="${i}" ${uploadInProgress?'disabled':''}>Upload selected video ↗</button>`:''}<p class="video-upload-status" role="status">${esc(videoMessages.get(x)||'')}</p></div>${x.mediaId?`<p class="fine">Attached: ${esc(x.filename||'Uploaded video')}. Plays on the customer page after publishing.</p><button data-clear-video="${i}">Remove uploaded video</button>`:''}<label>Public sample video URL (HTTPS)<input data-field="url" type="url" value="${esc(x.url)}"></label>`}<label class="check"><input data-field="visible" type="checkbox" ${x.visible?'checked':''}>Show to customers after publishing</label><button data-remove="${key}" data-index="${i}">Remove ${key==='classes'?'class':'video'}</button></div>`).join('');
  }
  $('#photo-editor').innerHTML=draft.photos.map((x,i)=>`<div class="edit-item" data-kind="photos" data-index="${i}"><img src="${esc(safeUrl(x.url,true))}" alt="Photo preview"><label>Photo description<input data-field="caption" value="${esc(x.caption)}" maxlength="300"></label><button data-remove="photos" data-index="${i}">Remove photo</button></div>`).join('');
 }
@@ -68,34 +70,42 @@ $('#admin').addEventListener('input',e=>{const el=e.target;if(el.id==='promo'||e
 $('#admin').addEventListener('click',e=>{if(uploadInProgress)return;const clear=e.target.closest('[data-clear-video]');if(clear){const x=draft.videos[Number(clear.dataset.clearVideo)];delete x.mediaId;delete x.filename;saveDraft();editors();return}const b=e.target.closest('[data-remove]');if(!b)return;draft[b.dataset.remove].splice(Number(b.dataset.index),1);saveDraft();editors()});
 $('#add-class').onclick=()=>{draft.classes.push({title:'New class',price:'',description:'',duration:'',visible:false});saveDraft();editors()};
 $('#add-video').onclick=()=>{draft.videos.push({title:'New video lesson',price:'',description:'',url:'',visible:false});saveDraft();editors()};
-$('#video-editor').addEventListener('change',async e=>{
+$('#video-editor').addEventListener('change',e=>{
  const input=e.target;if(!input.matches('[data-video-upload]'))return;
  const file=input.files[0];if(!file)return;
  const item=draft.videos[Number(input.dataset.videoUpload)];
+ if(!videoUploadType(file)||!file.size||file.size>15*1024*1024){videoMessages.set(item,'Choose an MP4, M4V or WebM up to 15 MB.');editors();return}
+ pendingVideos.set(item,file);videoMessages.set(item,'Ready to upload. Enter your admin password above, then click Upload selected video.');editors();updatePublishControls();
+});
+$('#video-editor').addEventListener('click',e=>{const button=e.target.closest('[data-start-upload]');if(button)uploadSelectedVideo(draft.videos[Number(button.dataset.startUpload)])});
+async function uploadSelectedVideo(item){
+ if(uploadInProgress)return;
+ const file=pendingVideos.get(item);if(!file)return;
+ const notify=message=>{videoMessages.set(item,message);$('#status').textContent=message;const row=$(`[data-kind="videos"][data-index="${draft.videos.indexOf(item)}"]`);const status=row?.querySelector?.('.video-upload-status');if(status)status.textContent=message};
  try{
   if(uploadInProgress)throw Error('Wait for the current upload to finish.');
   if(!remote)throw Error('Video uploads are available on the Netlify demo.');
   const uploadType=videoUploadType(file);
   if(!uploadType||!file.size||file.size>15*1024*1024)throw Error('Choose an MPEG-4 movie (.mp4 or .m4v) or WebM up to 15 MB. For longer videos, use a hosted sample URL.');
   const password=$('#password').value;if(!password)throw Error('Enter your admin password above before uploading.');
-  uploadInProgress=true;updatePublishControls();input.disabled=true;
+  uploadInProgress=true;updatePublishControls();editors();
   const headers={'X-Admin-Password':password};
   async function send(url,options){const r=await fetch(url,options);const body=await r.json().catch(()=>({error:'Upload failed. Please retry.'}));if(!r.ok)throw Error(body.error||'Upload failed.');return body}
-  $('#status').textContent='Preparing upload…';
+  notify('Preparing upload…');
   const created=await send('/.netlify/functions/media',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({size:file.size,type:uploadType})});
   for(let offset=0,part=0;offset<file.size;offset+=created.chunkSize,part++){
    await send('/.netlify/functions/media?id='+created.id+'&part='+part,{method:'PUT',headers:{...headers,'Content-Type':'application/octet-stream'},body:file.slice(offset,offset+created.chunkSize)});
-   $('#status').textContent='Uploading video · '+Math.min(100,Math.round((offset+created.chunkSize)/file.size*100))+'%';
+   notify('Uploading video · '+Math.min(100,Math.round((offset+created.chunkSize)/file.size*100))+'%');
   }
   await send('/.netlify/functions/media?id='+created.id,{method:'POST',headers});
-  item.mediaId=created.id;item.filename=file.name.slice(0,300);saveDraft();
-  $('#status').textContent='Video uploaded to your draft. Publish changes to show it to customers.';
- }catch(error){$('#status').textContent=error.message}finally{uploadInProgress=false;updatePublishControls();editors()}
-});
+  item.mediaId=created.id;item.filename=file.name.slice(0,300);pendingVideos.delete(item);saveDraft();
+  notify('Upload complete. Click Publish all changes to show this video to customers.');
+ }catch(error){notify(error.message+' Your file is still selected; fix the issue and retry.')}finally{uploadInProgress=false;updatePublishControls();editors()}
+}
 $('#photo').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>1024*1024||!['image/jpeg','image/png','image/webp'].includes(f.type)){ $('#status').textContent='Choose a JPEG, PNG, or WebP under 1 MB.';return}photoReads++;updatePublishControls();const reader=new FileReader();reader.onload=()=>{draft.photos.push({url:reader.result,caption:'Add a description of this hairstyle'});saveDraft();editors()};reader.onerror=()=>{$('#status').textContent='Photo could not be read. Please select it again.'};reader.onabort=reader.onerror;reader.onloadend=()=>{photoReads--;updatePublishControls()};reader.readAsDataURL(f);e.target.value=''};
 function validate(d){if(d.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email))throw Error('Enter a valid contact email.');for(const x of [...d.classes,...d.videos]){if(!x.title.trim())throw Error('Every class and video needs a title.');if(x.price!==''&&(!Number.isFinite(x.price)||x.price<0))throw Error('Prices must be zero or greater.')}for(const x of d.videos)if(x.url&&!safeUrl(x.url))throw Error('Video samples need a valid HTTPS URL.');}
 async function publishChanges(){
- if(publishBlocked||uploadInProgress||photoReads>0||publishing)return;
+ if(publishBlocked||uploadInProgress||photoReads>0||publishing||draft.videos.some(x=>pendingVideos.has(x)))return;
  publishing=true;updatePublishControls();
  try{
   const snapshot=clone(draft);validate(snapshot);
