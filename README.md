@@ -30,7 +30,7 @@ Only connect this demo repository and its own Netlify site. No custom domain is 
 - Admin MP4/WebM video uploads, up to 15 MB per preview. Chunked into 3 MB requests to Netlify Blobs, validated and attached to a draft. Published visible uploads play inline with seeking support. The media route serves only currently published, visible uploads. Hiding/removing one and publishing revokes that route on subsequent requests.
 - Promotion banner and contact email.
 - Gallery uploads (JPEG, PNG, WebP, max 1 MB each; max 4 MB total published data).
-- Browser-local drafts, explicit publishing and JSON export.
+- Browser-local drafts, explicit publishing and JSON export. A sticky footer publish bar shows pending changes and publishes all draft edits together. Both publish buttons wait for photo/video uploads and show progress/success/errors. Edits made while publishing remain in the draft for the next publish.
 - Shared published data on Netlify, with server-checked admin password.
 
 ## Demo boundaries

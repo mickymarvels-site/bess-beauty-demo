@@ -3,7 +3,7 @@ const initial = {promo:'',email:'',classes:[{title:'Knotless & Box Braids',price
 const clone=x=>JSON.parse(JSON.stringify(x));
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const safeUrl=(url,image=false)=>{try{const u=new URL(url);return u.protocol==='https:'?u.href:''}catch{return image&&/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(url)?url:''}};
-let live=clone(initial), draft,remote=false,uploadInProgress=false;
+let live=clone(initial), draft,remote=false,uploadInProgress=false,publishing=false,publishBlocked=true,photoReads=0;
 const price=x=>x===''||x==null?'Price to be confirmed':new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(x);
 
 let cart=[];
@@ -41,7 +41,15 @@ function render(){
  renderCart();
  $('#contact-link').hidden=!email;$('#contact-link').href='mailto:'+email;$('#contact-note').textContent=email?'Tell us about the style or class you’re interested in. Contact Bess to discuss availability.':'Appointment and class inquiries will open when salon contact details are added.';
 }
-function saveDraft(){try{localStorage.setItem('bess-draft-v1',JSON.stringify(draft));$('#status').textContent='Draft saved · not published'}catch{$('#status').textContent='Browser storage is full. Remove a photo or export your draft.'}}
+function updatePublishControls(){
+ const busy=uploadInProgress||photoReads>0||publishing;
+ const changed=draft&&JSON.stringify(draft)!==JSON.stringify(live);
+ const label=publishing?'Publishing…':uploadInProgress||photoReads>0?'Waiting for uploads…':'Publish all changes ↗';
+ for(const selector of ['#publish','#publish-bottom']){const button=$(selector);button.disabled=publishBlocked||busy;button.textContent=label;button.setAttribute('aria-busy',String(busy))}
+ $('#discard').disabled=busy;
+ $('#publish-state').textContent=publishBlocked?'Publishing unavailable':publishing?'Publishing your updates…':uploadInProgress||photoReads>0?'Upload in progress':changed?'Unpublished changes':'Everything is published';
+}
+function saveDraft(){updatePublishControls();try{localStorage.setItem('bess-draft-v1',JSON.stringify(draft));$('#status').textContent='Draft saved · not published'}catch{$('#status').textContent='Browser storage is full. Remove a photo or export your draft.'}}
 function editors(){
  $('#promo').value=draft.promo;$('#email').value=draft.email;
  for(const [key,target] of [['classes','#class-editor'],['videos','#video-editor']]){
@@ -56,13 +64,13 @@ $('#add-video').onclick=()=>{draft.videos.push({title:'New video lesson',price:'
 $('#video-editor').addEventListener('change',async e=>{
  const input=e.target;if(!input.matches('[data-video-upload]'))return;
  const file=input.files[0];if(!file)return;
- const item=draft.videos[Number(input.dataset.videoUpload)],publishWasDisabled=$('#publish').disabled;
+ const item=draft.videos[Number(input.dataset.videoUpload)];
  try{
   if(uploadInProgress)throw Error('Wait for the current upload to finish.');
   if(!remote)throw Error('Video uploads are available on the Netlify demo.');
   if(!['video/mp4','video/webm'].includes(file.type)||!file.size||file.size>15*1024*1024)throw Error('Choose an MP4 or WebM up to 15 MB. For longer videos, use a hosted sample URL.');
   const password=$('#password').value;if(!password)throw Error('Enter your admin password above before uploading.');
-  uploadInProgress=true;$('#publish').disabled=true;$('#discard').disabled=true;input.disabled=true;
+  uploadInProgress=true;updatePublishControls();input.disabled=true;
   const headers={'X-Admin-Password':password};
   async function send(url,options){const r=await fetch(url,options);const body=await r.json().catch(()=>({error:'Upload failed. Please retry.'}));if(!r.ok)throw Error(body.error||'Upload failed.');return body}
   $('#status').textContent='Preparing upload…';
@@ -74,16 +82,31 @@ $('#video-editor').addEventListener('change',async e=>{
   await send('/.netlify/functions/media?id='+created.id,{method:'POST',headers});
   item.mediaId=created.id;item.filename=file.name.slice(0,300);saveDraft();
   $('#status').textContent='Video uploaded to your draft. Publish changes to show it to customers.';
- }catch(error){$('#status').textContent=error.message}finally{uploadInProgress=false;$('#publish').disabled=publishWasDisabled;$('#discard').disabled=false;editors()}
+ }catch(error){$('#status').textContent=error.message}finally{uploadInProgress=false;updatePublishControls();editors()}
 });
-$('#photo').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>1024*1024||!['image/jpeg','image/png','image/webp'].includes(f.type)){ $('#status').textContent='Choose a JPEG, PNG, or WebP under 1 MB.';return}const reader=new FileReader();reader.onload=()=>{draft.photos.push({url:reader.result,caption:'Add a description of this hairstyle'});saveDraft();editors()};reader.readAsDataURL(f);e.target.value=''};
+$('#photo').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>1024*1024||!['image/jpeg','image/png','image/webp'].includes(f.type)){ $('#status').textContent='Choose a JPEG, PNG, or WebP under 1 MB.';return}photoReads++;updatePublishControls();const reader=new FileReader();reader.onload=()=>{draft.photos.push({url:reader.result,caption:'Add a description of this hairstyle'});saveDraft();editors()};reader.onerror=()=>{$('#status').textContent='Photo could not be read. Please select it again.'};reader.onabort=reader.onerror;reader.onloadend=()=>{photoReads--;updatePublishControls()};reader.readAsDataURL(f);e.target.value=''};
 function validate(d){if(d.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email))throw Error('Enter a valid contact email.');for(const x of [...d.classes,...d.videos]){if(!x.title.trim())throw Error('Every class and video needs a title.');if(x.price!==''&&(!Number.isFinite(x.price)||x.price<0))throw Error('Prices must be zero or greater.')}for(const x of d.videos)if(x.url&&!safeUrl(x.url))throw Error('Video samples need a valid HTTPS URL.');}
-$('#publish').onclick=async()=>{if(uploadInProgress)return;const button=$('#publish');button.disabled=true;try{validate(draft);if(remote){const r=await fetch('/.netlify/functions/content',{method:'PUT',headers:{'Content-Type':'application/json','X-Admin-Password':$('#password').value},body:JSON.stringify(draft)});if(!r.ok){const body=await r.json();throw Error(body.error||'Publish failed.')} }else localStorage.setItem('bess-published-v1',JSON.stringify(draft));live=clone(draft);render();$('#status').textContent=remote?'Published. Customers now see this content.':'Published to this browser’s demo only.'}catch(e){$('#status').textContent=e.message}finally{button.disabled=false}};
-$('#discard').onclick=()=>{if(uploadInProgress)return;draft=clone(live);saveDraft();editors();$('#status').textContent='Draft restored from published content.'};
+async function publishChanges(){
+ if(publishBlocked||uploadInProgress||photoReads>0||publishing)return;
+ publishing=true;updatePublishControls();
+ try{
+  const snapshot=clone(draft);validate(snapshot);
+  if(remote){
+   if(!$('#password').value){$('#password').focus();throw Error('Enter your admin password above, then click Publish all changes.')}
+   const r=await fetch('/.netlify/functions/content',{method:'PUT',headers:{'Content-Type':'application/json','X-Admin-Password':$('#password').value},body:JSON.stringify(snapshot)});
+   if(!r.ok){const body=await r.json().catch(()=>({}));throw Error(body.error||'Publishing failed. Your draft is kept; please retry.')}
+  }else localStorage.setItem('bess-published-v1',JSON.stringify(snapshot));
+  live=snapshot;render();
+  $('#status').textContent=remote?'Published successfully. Customers now see your updates.':'Published to this browser’s demo only.';
+ }catch(e){$('#status').textContent=e.message}finally{publishing=false;updatePublishControls()}
+}
+$('#publish').onclick=publishChanges;
+$('#publish-bottom').onclick=publishChanges;
+$('#discard').onclick=()=>{if(uploadInProgress||photoReads>0||publishing)return;draft=clone(live);saveDraft();editors();$('#status').textContent='Draft restored from published content.'};
 $('#export').onclick=()=>{const blob=new Blob([JSON.stringify(draft,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='bess-beauty-content.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
-function route(){const admin=location.hash==='#admin';$('#admin').hidden=!admin;$('#customer').hidden=admin;if(admin)editors()}
+function route(){const admin=location.hash==='#admin';$('#admin').hidden=!admin;$('#customer').hidden=admin;if(admin){editors();updatePublishControls()}}
 async function init(){try{const r=await fetch('/.netlify/functions/content',{cache:'no-store'});if(r.ok&&r.headers.get('content-type')?.includes('application/json')){const data=await r.json();live=data.content||clone(initial);remote=true}else if(r.status!==404||!['localhost','127.0.0.1'].includes(location.hostname))throw Error('Content service unavailable')}catch(e){if(location.hostname!=='localhost'&&location.hostname!=='127.0.0.1'){ $('#mode').textContent='Shared content is unavailable. Publishing is disabled; refresh to retry.';$('#publish').disabled=true;draft=clone(initial);render();route();return}}
  if(!remote){try{live=JSON.parse(localStorage.getItem('bess-published-v1'))||clone(initial)}catch{live=clone(initial)}}
  try{draft=JSON.parse(localStorage.getItem('bess-draft-v1'))||clone(live)}catch{draft=clone(live)}
- $('#mode').textContent=remote?'Shared demo: edit a draft, then publish with the admin password. Only published content appears on the customer website.':'Local demo: edits and publishing are saved in this browser only. Netlify enables shared updates and password-protected publishing.';$('#password-label').hidden=!remote;render();route();}
+ $('#mode').textContent=remote?'Shared demo: edit a draft, then publish with the admin password. Only published content appears on the customer website.':'Local demo: edits and publishing are saved in this browser only. Netlify enables shared updates and password-protected publishing.';$('#password-label').hidden=!remote;publishBlocked=false;updatePublishControls();render();route();}
 window.addEventListener('hashchange',route);init();
